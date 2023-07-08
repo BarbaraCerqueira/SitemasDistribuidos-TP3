@@ -1,0 +1,10 @@
+/.vscode
+/Makefile
+/client
+/client.c
+/cliente
+/coordenador
+/coordenador.o
+/coordenador_testes.c
+/log.txt
+/resultado.txt
