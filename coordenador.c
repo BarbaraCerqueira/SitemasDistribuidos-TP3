@@ -37,7 +37,7 @@ typedef struct {
 
 typedef struct {
     MessageQueue queue;
-    ProcessStats stats[MAX_CLIENTS];
+    ProcessStats* stats;
     int this_pid;
     int terminate;
     pthread_mutex_t queue_mutex;
@@ -62,9 +62,14 @@ int initializeQueue(MessageQueue* queue) {
 }
 
 int initializeCoordinatorData(CoordinatorData* data) {
-    int i;
+    // Allocate memory for stats
+    data->stats = (ProcessStats*)malloc(MAX_CLIENTS * sizeof(ProcessStats));
+    if (data->stats == NULL) {
+        perror("Error allocating memory for Process Statistics vector");
+        return 1;
+    }
     // Initializing Process Stats Vector
-    for (i = 0; i < MAX_CLIENTS; i++){
+    for (int i = 0; i < MAX_CLIENTS; i++) {
         data->stats[i].process_id = -1;
         data->stats[i].access_count = 0;
     }
@@ -118,10 +123,9 @@ Message dequeue(MessageQueue* queue) {
 }
 
 void printQueue(MessageQueue* queue) {
-    int i;
     printf("Requests Queue:\n");
     if (!isQueueEmpty(queue)){
-        for (i = queue->front; i <= queue->rear; i++) {
+        for (int i = queue->front; i <= queue->rear; i++) {
             printf("Process %d waiting access\n", queue->messages[i].process_id);
         }
     }
@@ -129,9 +133,8 @@ void printQueue(MessageQueue* queue) {
 }
 
 void printStats(ProcessStats* stats) {
-    int i;
     printf("Access Statistics:\n");
-    for (i = 0; i < MAX_CLIENTS; i++) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
         if(stats[i].process_id != -1){
             printf("Process %d: %d access requests granted\n", stats[i].process_id, stats[i].access_count);
         }
@@ -151,24 +154,26 @@ void logMessage(FILE* log_file, Message* message) {
 /* 
     Search coordinator data for a process: 
     - If process is not found, adds it
-    - If increment = 0, increments process access count
+    - If increment = 1, increments process access count
 */
 void updateProcessStats(int process_id, CoordinatorData* data, int increment){
     pthread_mutex_lock(&data->stats_mutex);
     // Search for specific Process in data
-    for(int i; i < MAX_CLIENTS; i++) {
+    for(int i = 0; i < MAX_CLIENTS; i++) {
+
         // Process already in statistics
         if(data->stats[i].process_id == process_id){
-            if (increment) data->stats[i].access_count++;
+            if (increment) 
+                data->stats[i].access_count++;
             break;
         }
+
         // Process not in statistics -> adds process
-        else{
-            if(data->stats[i].process_id == -1){
-                data->stats[i].process_id = process_id;
-                if (increment) data->stats[i].access_count++;
-                break;
-            }
+        if(data->stats[i].process_id == -1){
+            data->stats[i].process_id = process_id;
+            if (increment) 
+                data->stats[i].access_count++;
+            break;
         }
     }
     pthread_mutex_unlock(&data->stats_mutex);
@@ -206,8 +211,6 @@ void* clientThread(void* arg) {
         // Receive message from client process
         int bytes_received = recv(socket_descriptor, message_buffer, MESSAGE_SIZE, 0);
 
-        printf("Message received through client socket %d: %s \n", socket_descriptor, message_buffer); // DEBUG
-
         received_message.arrival_time = time(NULL); // Register instant of receipt of message
         received_message.socket_descriptor = socket_descriptor; // Register socket that possibly will be used to send Grant later
 
@@ -221,15 +224,12 @@ void* clientThread(void* arg) {
 
             sscanf(message_buffer, "%d|%d|", &received_message.message_id, &received_message.process_id);
 
-            printf("Stored message: time is %ld, socket is %d, message id is %d, process id is %d. \n", received_message.arrival_time, received_message.socket_descriptor, received_message.message_id, received_message.process_id); // DEBUG
-
             // Adds process to coordinator data if it doesn't exist
-            updateProcessStats(received_message.process_id, data, 1);
+            updateProcessStats(received_message.process_id, data, 0);
 
             // Request message
             if(received_message.message_id == REQUEST_MESSAGE_ID){
                 pthread_mutex_lock(&data->queue_mutex);
-                printf("Entered critical zone, process %d\n", received_message.process_id); // DEBUG
                 if (isQueueEmpty(&data->queue)) {
                     // Send Grant message to process
                     grantMessage(data->this_pid, socket_descriptor);
@@ -240,24 +240,18 @@ void* clientThread(void* arg) {
                     grant_message.process_id = data->this_pid;
                     logMessage(log_file, &grant_message);
 
-                    printf("Queue Empty: Sent GRANT to process %d\n", received_message.process_id); // DEBUG
-
                     // Updates process access counter
-                    updateProcessStats(received_message.process_id, data, 0);
+                    updateProcessStats(received_message.process_id, data, 1);
                 }
                 // Enqueue message
                 enqueue(&data->queue, received_message);
                 pthread_mutex_unlock(&data->queue_mutex);
-
-                printf("Message of request from process %d is enqueued, out of critical zone\n", received_message.process_id); // DEBUG
             }
 
             // Release message
             if(received_message.message_id == RELEASE_MESSAGE_ID){
                 pthread_mutex_lock(&data->queue_mutex);
                 dequeue(&data->queue); // Removes from queue
-
-                printf("Release message from process %d, out of queue.\n", received_message.process_id); // DEBUG
                 
                 if (!isQueueEmpty(&data->queue)){
                     // Picks next process in queue
@@ -266,8 +260,6 @@ void* clientThread(void* arg) {
                     // Send grant to next process waiting in queue
                     grantMessage(data->this_pid, head_queue_message.socket_descriptor);
 
-                    printf("Next in Queue: Sent GRANT to process %d\n", head_queue_message.process_id); // DEBUG
-
                     //Log Grant Message
                     grant_message.arrival_time = time(NULL); // Register message sending time
                     grant_message.message_id = GRANT_MESSAGE_ID;
@@ -275,19 +267,17 @@ void* clientThread(void* arg) {
                     logMessage(log_file, &grant_message);
 
                     // Updates process access counter
-                    updateProcessStats(head_queue_message.process_id, data, 0);
+                    updateProcessStats(head_queue_message.process_id, data, 1);
                 }
                 pthread_mutex_unlock(&data->queue_mutex);
             }
 
             // Log received message
             logMessage(log_file, &received_message);
-
-            printf("Logged message of id %d, from process %d\n", received_message.message_id, received_message.process_id); // DEBUG
         }
     }
+    
     close(socket_descriptor);
-    printf("Connection closed on socket %d by process %d\n", socket_descriptor, received_message.process_id); // DEBUG
     pthread_exit(NULL);  
 }
 
@@ -360,8 +350,6 @@ void* coordinatorThread(void* arg) {
                 perror("Error accepting client connection");
                 continue;
             }
-            
-            printf("Accepted new connection through socket %d\n", new_socket); //DEBUG
 
             for (i = 0; i < MAX_CLIENTS; i++) {
                 if (client_sockets[i] == 0) {
