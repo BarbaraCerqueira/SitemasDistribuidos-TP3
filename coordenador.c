@@ -286,7 +286,6 @@ void* clientThread(void* arg) {
             printf("Logged message of id %d, from process %d\n", received_message.message_id, received_message.process_id); // DEBUG
         }
     }
-    
     close(socket_descriptor);
     printf("Connection closed on socket %d by process %d\n", socket_descriptor, received_message.process_id); // DEBUG
     pthread_exit(NULL);  
