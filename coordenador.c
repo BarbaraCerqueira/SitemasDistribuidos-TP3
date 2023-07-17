@@ -8,11 +8,9 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
-
 #define MESSAGE_SIZE 10
 #define MAX_CLIENTS 2000
 #define MAX_QUEUE_SIZE 2000
-
 #define PORT 8888
 #define REQUEST_MESSAGE_ID 1
 #define GRANT_MESSAGE_ID 2
@@ -49,7 +47,6 @@ typedef struct {
     int socket_descriptor;
     CoordinatorData* coordinator_data;
 } ThreadArgs;
-
 
 int initializeQueue(MessageQueue* queue) {
     queue->messages = (Message*)malloc(MAX_QUEUE_SIZE * sizeof(Message));
@@ -150,13 +147,11 @@ void logMessage(FILE* log_file, Message* message) {
     sprintf(message_types[0], "[R] Request");
     sprintf(message_types[1], "[S] Grant");
     sprintf(message_types[2], "[R] Release");
-
     // Verifies if file exists
     if (log_file == NULL) {
         printf("Error: log file is not open\n");
         return;
     }
-
     // Format seconds
     strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", localtime(&message->arrival_time.tv_sec));
     // Format milliseconds
@@ -165,7 +160,6 @@ void logMessage(FILE* log_file, Message* message) {
     // Append milliseconds to the time string
     strcat(timeString, ".");
     strcat(timeString, milliseconds);
-
     fprintf(log_file,"%s - %d - %s\n", message_types[message->message_id - 1], message->process_id, timeString);
     fflush(log_file);
 }
@@ -179,14 +173,12 @@ void updateProcessStats(int process_id, CoordinatorData* data, int increment){
     pthread_mutex_lock(&data->stats_mutex);
     // Search for specific Process in data
     for(int i = 0; i < MAX_CLIENTS; i++) {
-
         // Process already in statistics
         if(data->stats[i].process_id == process_id){
             if (increment) 
                 data->stats[i].access_count++;
             break;
         }
-
         // Process not in statistics -> adds process
         if(data->stats[i].process_id == -1){
             data->stats[i].process_id = process_id;
@@ -221,18 +213,14 @@ void* clientThread(void* arg) {
         perror("Error trying to open log file");
         return NULL;
     }
-
     // Accept and handle new client messages
     while (1) {
         // Clean buffer up before each read
         memset(message_buffer, 0, MESSAGE_SIZE+1);
-
         // Receive message from client process
         int bytes_received = recv(socket_descriptor, message_buffer, MESSAGE_SIZE, 0);
-
         gettimeofday(&received_message.arrival_time, NULL); // Register instant of receipt of message
         received_message.socket_descriptor = socket_descriptor; // Register socket that possibly will be used to send Grant later
-
         if (bytes_received < 0) {
             perror("Error receiving message from client");
             break;
@@ -240,12 +228,9 @@ void* clientThread(void* arg) {
             // Connection closed
             break;
         } else { // Processing message
-
             sscanf(message_buffer, "%d|%d|", &received_message.message_id, &received_message.process_id);
-
             // Adds process to coordinator data if it doesn't exist
             updateProcessStats(received_message.process_id, data, 0);
-
             // Request message
             if(received_message.message_id == REQUEST_MESSAGE_ID){
                 pthread_mutex_lock(&data->queue_mutex);
@@ -254,13 +239,11 @@ void* clientThread(void* arg) {
                 if (isQueueEmpty(&data->queue)) {
                     // Send Grant message to process
                     grantMessage(data->this_pid, socket_descriptor);
-
                     //Log Grant Message
                     gettimeofday(&grant_message.arrival_time, NULL); // Register instant of receipt of message
                     grant_message.message_id = GRANT_MESSAGE_ID;
                     grant_message.process_id = received_message.process_id;
                     logMessage(log_file, &grant_message);
-
                     // Updates process access counter
                     updateProcessStats(received_message.process_id, data, 1);
                 }
@@ -275,20 +258,16 @@ void* clientThread(void* arg) {
                 // Log received message
                 logMessage(log_file, &received_message);
                 dequeue(&data->queue); // Removes from queue
-                
                 if (!isQueueEmpty(&data->queue)){
                     // Picks next process in queue
                     head_queue_message = headQueue(&data->queue);
-
                     // Send grant to next process waiting in queue
                     grantMessage(data->this_pid, head_queue_message.socket_descriptor);
-
                     //Log Grant Message
                     gettimeofday(&grant_message.arrival_time, NULL); // Register instant of receipt of message
                     grant_message.message_id = GRANT_MESSAGE_ID;
                     grant_message.process_id = head_queue_message.process_id;
                     logMessage(log_file, &grant_message);
-
                     // Updates process access counter
                     updateProcessStats(head_queue_message.process_id, data, 1);
                 }
@@ -315,32 +294,26 @@ void* coordinatorThread(void* arg) {
     for (i = 0; i < MAX_CLIENTS; i++) {
         client_sockets[i] = 0;
     }
-
     // Create coordinator socket
     coordinator_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (coordinator_socket < 0) {
         perror("Error creating coordinator socket");
         return NULL;
     }
-    
     // Bind coordinator socket to port 8888
     coordinator_addr.sin_family = AF_INET;
     coordinator_addr.sin_addr.s_addr = INADDR_ANY;
     coordinator_addr.sin_port = htons(PORT);
-    
     if (bind(coordinator_socket, (struct sockaddr*)&coordinator_addr, sizeof(coordinator_addr)) < 0) {
         perror("Error binding coordinator socket");
         return NULL;
     }
-    
     // Listen for client connections, maximum of 5 at a time
     if (listen(coordinator_socket, 5) < 0) {
         perror("Error listening for connections");
         return NULL;
     }
-
     printf("Coordinator listening on port %d...\n", PORT);
-
     // Accept and handle client connections
     while (!data->terminate) {
         FD_ZERO(&readfds);
@@ -350,18 +323,16 @@ void* coordinatorThread(void* arg) {
         struct timeval timeout;
         timeout.tv_sec = 1; // Time limit set to 1 second
         timeout.tv_usec = 0;
-
         int activity = select(max_sd + 1, &readfds, NULL, NULL, &timeout);
+        
         if (activity < 0) {
             perror("Error in select");
             break;
         }
-
         if (activity == 0) {
             // Timeout with no activity, verifies terminate condition
             continue;
         }
-
         // Connection through main socket - new connection
         if (FD_ISSET(coordinator_socket, &readfds)) {
             client_address_size = sizeof(client_addr);
@@ -370,21 +341,17 @@ void* coordinatorThread(void* arg) {
                 perror("Error accepting client connection");
                 continue;
             }
-
             for (i = 0; i < MAX_CLIENTS; i++) {
                 if (client_sockets[i] == 0) {
                     // Add new socket to client sockets vector
                     client_sockets[i] = new_socket;
-
                     // Create client thread and send socket descriptor and coordinator data as argument
                     thread_args[i].socket_descriptor = new_socket;
                     thread_args[i].coordinator_data = data;
-
                     if (pthread_create(&client_threads[i], NULL, clientThread, &thread_args[i]) != 0) {
                         perror("Error creating client thread");
                         return NULL;
                     }
-
                     break;
                 }
             }
@@ -425,34 +392,28 @@ int main() {
 
     // Initialize coordinator data
     initializeCoordinatorData(&data);
-
     // Create coordinator thread
     if (pthread_create(&coordinator_thread, NULL, coordinatorThread, &data) != 0) {
         perror("Error creating coordinator thread");
         return 1;
     }
     sleep(0.5); // To maintain the correct order of messages
-
     // Create interface thread
     if (pthread_create(&interface_thread, NULL, interfaceThread, &data) != 0) {
         perror("Error creating interface thread");
         return 1;
     }
-    
     // Wait for coordinator thread to finish
     if (pthread_join(coordinator_thread, NULL) != 0) {
         perror("Error joining coordinator thread");
         return 1;
     }
-
     // Wait for interface thread to finish
     if (pthread_join(interface_thread, NULL) != 0) {
         perror("Error joining interface thread");
         return 1;
     }
-    
     pthread_mutex_destroy(&data.queue_mutex);
     pthread_mutex_destroy(&data.stats_mutex); 
-
     return 0;
 }
