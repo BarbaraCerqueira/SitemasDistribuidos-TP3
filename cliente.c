@@ -61,16 +61,18 @@ int main(int argc, char *argv[]) {
                 perror("Socket creation failed");
                 return 1;
             }
+
             memset(&address, 0, sizeof(address));
             address.sin_family = AF_INET;
             address.sin_port = htons(COORDINATOR_PORT);
             address.sin_addr.s_addr = inet_addr("127.0.0.1"); // Coordinator IP (localhost)
+
             if (connect(sockets[i], (struct sockaddr *)&address, sizeof(address)) == -1) {
                 perror("Connection to coordinator failed");
                 return 1;
-            }
-            srand(getpid());
+
             int processId = getpid();
+            
             for (int j = 0; j < r; j++) {
                 sendRequest(processId, sockets[i]);
                 char buffer[MESSAGE_SIZE + 1];
