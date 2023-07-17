@@ -1,0 +1,8 @@
+n,r,k,valid_log, valid_results, log_time_diff,result_time_diff
+2, 3, 0, true, true, 0, 0
+4, 3, 0, true, true, 0, 0
+8, 3, 0, true, true, 0, 0
+16, 3, 0, true, true, 1000, 1000
+32, 3, 0, true, true, 2000, 2000
+64, 3, 0, true, true, 2000, 2000
+128, 3, 0, true, true, 2000, 2000
