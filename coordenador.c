@@ -5,11 +5,12 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <time.h>
 #include <sys/select.h>
+#include <sys/time.h>
+
 
 #define MESSAGE_SIZE 10
-#define MAX_CLIENTS 200
+#define MAX_CLIENTS 2000
 #define MAX_QUEUE_SIZE 2000
 
 #define PORT 8888
@@ -21,7 +22,7 @@ typedef struct {
     int message_id;
     int process_id;
     int socket_descriptor;
-    time_t arrival_time;
+    struct timeval arrival_time;
 } Message;
 
 typedef struct {
@@ -143,12 +144,30 @@ void printStats(ProcessStats* stats) {
 }
 
 void logMessage(FILE* log_file, Message* message) {
+    char message_types[3][20];
+    char timeString[30];
+                        
+    sprintf(message_types[0], "[R] Request");
+    sprintf(message_types[1], "[S] Grant");
+    sprintf(message_types[2], "[R] Release");
+
     // Verifies if file exists
     if (log_file == NULL) {
         printf("Error: log file is not open\n");
         return;
     }
-    fprintf(log_file, "%d-%d-%ld\n", message->message_id, message->process_id, message->arrival_time);
+
+    // Format seconds
+    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", localtime(&message->arrival_time.tv_sec));
+    // Format milliseconds
+    char milliseconds[4];
+    snprintf(milliseconds, sizeof(milliseconds), "%.3d", (int)(message->arrival_time.tv_usec / 1000));
+    // Append milliseconds to the time string
+    strcat(timeString, ".");
+    strcat(timeString, milliseconds);
+
+    fprintf(log_file,"%s - %d - %s\n", message_types[message->message_id - 1], message->process_id, timeString);
+    fflush(log_file);
 }
 
 /* 
@@ -211,7 +230,7 @@ void* clientThread(void* arg) {
         // Receive message from client process
         int bytes_received = recv(socket_descriptor, message_buffer, MESSAGE_SIZE, 0);
 
-        received_message.arrival_time = time(NULL); // Register instant of receipt of message
+        gettimeofday(&received_message.arrival_time, NULL); // Register instant of receipt of message
         received_message.socket_descriptor = socket_descriptor; // Register socket that possibly will be used to send Grant later
 
         if (bytes_received < 0) {
@@ -230,14 +249,16 @@ void* clientThread(void* arg) {
             // Request message
             if(received_message.message_id == REQUEST_MESSAGE_ID){
                 pthread_mutex_lock(&data->queue_mutex);
+                // Log received message
+                logMessage(log_file, &received_message);
                 if (isQueueEmpty(&data->queue)) {
                     // Send Grant message to process
                     grantMessage(data->this_pid, socket_descriptor);
 
                     //Log Grant Message
-                    grant_message.arrival_time = time(NULL); // Register message sending time
+                    gettimeofday(&grant_message.arrival_time, NULL); // Register instant of receipt of message
                     grant_message.message_id = GRANT_MESSAGE_ID;
-                    grant_message.process_id = data->this_pid;
+                    grant_message.process_id = received_message.process_id;
                     logMessage(log_file, &grant_message);
 
                     // Updates process access counter
@@ -251,6 +272,8 @@ void* clientThread(void* arg) {
             // Release message
             if(received_message.message_id == RELEASE_MESSAGE_ID){
                 pthread_mutex_lock(&data->queue_mutex);
+                // Log received message
+                logMessage(log_file, &received_message);
                 dequeue(&data->queue); // Removes from queue
                 
                 if (!isQueueEmpty(&data->queue)){
@@ -261,9 +284,9 @@ void* clientThread(void* arg) {
                     grantMessage(data->this_pid, head_queue_message.socket_descriptor);
 
                     //Log Grant Message
-                    grant_message.arrival_time = time(NULL); // Register message sending time
+                    gettimeofday(&grant_message.arrival_time, NULL); // Register instant of receipt of message
                     grant_message.message_id = GRANT_MESSAGE_ID;
-                    grant_message.process_id = data->this_pid;
+                    grant_message.process_id = head_queue_message.process_id;
                     logMessage(log_file, &grant_message);
 
                     // Updates process access counter
@@ -271,12 +294,9 @@ void* clientThread(void* arg) {
                 }
                 pthread_mutex_unlock(&data->queue_mutex);
             }
-
-            // Log received message
-            logMessage(log_file, &received_message);
         }
     }
-    
+    fclose(log_file);
     close(socket_descriptor);
     pthread_exit(NULL);  
 }
@@ -290,7 +310,7 @@ void* coordinatorThread(void* arg) {
     struct sockaddr_in coordinator_addr, client_addr;
     int max_sd;
     fd_set readfds;
-    
+
     // Initializing client sockets vector
     for (i = 0; i < MAX_CLIENTS; i++) {
         client_sockets[i] = 0;
@@ -359,6 +379,7 @@ void* coordinatorThread(void* arg) {
                     // Create client thread and send socket descriptor and coordinator data as argument
                     thread_args[i].socket_descriptor = new_socket;
                     thread_args[i].coordinator_data = data;
+
                     if (pthread_create(&client_threads[i], NULL, clientThread, &thread_args[i]) != 0) {
                         perror("Error creating client thread");
                         return NULL;
