@@ -34,7 +34,7 @@ O programa consite em um arquivo fonte (coordenador.c) que roda o processo coord
 O arquivo cliente.c roda os processos clientes, a ele são passados os argumentos n (número de processos clientes), r (número de repetições) e k (número de segundos a aguardar na região crítica. Ao executar, o arquivo cria n processos com a função fork(), e cada um deles age sobre uma região crítica, dentro da qual escrevem seus PIDs e os seus horários atuais em um arquivo chamado resultado.txt. Eles repetem essa ação r vezes e, após cada vez, aguardam k segundos antes de sair da região crítica. O acesso à região crítica é coordenado com a troca de mensagens com o coordenador. O coordenador registra cada mensagem que recebe em um arquivo log.txt.  
 
 ### Como usar
-Compile os arquivos .c rodando ./compile.sh. Para rodar o coordenador, use ./coordenador. Para o cliente, use ./cliente <n> <r> <k> após rodar o coordenador.  
+Compile os arquivos .c rodando ./compile.sh`. Para rodar o coordenador, use ./coordenador. Para o cliente, use ./cliente <n> <r> <k> após rodar o coordenador.  
 Para rodar os testes do trabalho, use ./client_tests com o coordenador rodando. Os testes podem requerir o programa bc, você pode instalá-lo no Linux com sudo apt install bc. Após rodar os testes, os arquivos nas pastas graphics, outputs e csv_data serão refeitos.
 
 
