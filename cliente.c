@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
 
 #define COORDINATOR_PORT 8888
 #define BUFFER_SIZE 1024
@@ -45,13 +46,13 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in address;
 
     if (argc != 4) {
-        printf("Usage: %s <n> <k> <r>\n", argv[0]);
+        printf("Usage: %s <n> <r> <k>\n", argv[0]);
         return 1;
     }
 
     int n = atoi(argv[1]); // Number of processes
-    int k = atoi(argv[2]); // Time to wait in critical zone
-    int r = atoi(argv[3]); // Number of repetitions
+    int r = atoi(argv[2]); // Number of repetitions
+    int k = atoi(argv[3]); // Time to wait in critical zone
 
     for (int i = 1; i <= n; i++) {
         
@@ -92,18 +93,26 @@ int main(int argc, char *argv[]) {
                 if (id_message == GRANT_MESSAGE_ID) {
                     FILE *file = fopen("resultado.txt", "a");
                     if (file != NULL) {
-                        time_t currentTime;
-                        struct tm *localTime;
+                        struct timeval tv;
                         char timeString[30];
                         char processIdString[10];
 
-                        time(&currentTime);
-                        localTime = localtime(&currentTime);
+                        gettimeofday(&tv, NULL);
 
-                        strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", localTime);
+                        // Format seconds
+                        strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", localtime(&tv.tv_sec));
+
+                        // Format milliseconds
+                        char milliseconds[4];
+                        snprintf(milliseconds, sizeof(milliseconds), "%.3d", (int)(tv.tv_usec / 1000));
+
+                        // Append milliseconds to the time string
+                        strcat(timeString, ".");
+                        strcat(timeString, milliseconds);
+                        
                         snprintf(processIdString, sizeof(processIdString), "%d", processId);
 
-                        fprintf(file, "%s - Process %s\n", timeString, processIdString);
+                        fprintf(file, "Process %s - %s\n", processIdString, timeString);
                         fclose(file);
 
                         sleep(k); // Aguarda k segundos
